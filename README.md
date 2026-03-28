@@ -1,5 +1,3 @@
-<img width="1040" height="481" alt="image" src="https://github.com/user-attachments/assets/20e9224e-b6ee-4564-bab6-91c0ecf5dd38" /># ABW Extensions
-
 TurboWarp 扩展集合，包含原创扩展及二次修改优化版本。
 
 ## 扩展列表
