@@ -6,6 +6,7 @@ TurboWarp 扩展集合，包含原创扩展及二次修改优化版本。
 |---------|------|------|
 | Sprite Effects V3 | 1.0 | 基于 SharkPool V2 的性能优化版本，提供 SVG 滤镜及画布特效 |
 | Projection3D | 1.0 | 轻松构建基础的3D投影 |
+| VectorMathExtension | 1.0 | 专业又不专业的向量数学计算 |
 | _待添加_ | - | - |
 
 ---
@@ -81,6 +82,5 @@ Bilibili: [Gossamer-丝](https://space.bilibili.com/2067930750)
 ### 2026-03-28
 - 修复 Sprite Effects V3 滤镜注入时的标签闭合问题
 - 优化 canvas 滤镜更新逻辑
-
-### 2026-03-28
 - 添加 Projection3D 扩展和示例项目
+- 添加 VectorMathExtension 扩展
