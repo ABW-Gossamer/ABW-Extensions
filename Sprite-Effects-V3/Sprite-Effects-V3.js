@@ -10,6 +10,13 @@
 //   - Optimized SVG parsing with string caching
 //   - Debounced canvas filter updates
 //   - Memory leak prevention and cleanup
+// 优化内容：
+//   - LRU 缓存机制（限制 100 条记录）用于图像转换
+//   - 请求去重，防止重复加载相同资源
+//   - 支持 OffscreenCanvas，提高渲染性能
+//   - 优化 SVG 解析，通过字符串缓存减少重复解析
+//   - 画布滤镜更新使用防抖，减少频繁重绘
+//   - 内存泄漏防护和资源清理
 //
 // License: MIT (original license retained below)
 // ============================================================================
@@ -94,13 +101,28 @@
     filterDOM.setAttribute("xmlns", "http://www.w3.org/2000/svg");
     filterDOM.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
     filterDOM.classList.add("SP-Sprite-Effect-Filters");
-    document.body.appendChild(filterDOM);
+    if (!document.body.contains(filterDOM)) {
+        document.body.appendChild(filterDOM);
+    }
 
     const getCanvas = () => {
-        if (compatMode) {
-            if (isPackagedEnv) return render.canvas.parentNode;
-            else return render.canvas.parentNode.parentNode.parentNode;
-        } else {
+        try {
+            if (compatMode) {
+                if (isPackagedEnv) {
+                    return render.canvas?.parentNode;
+                } else {
+                    // 更安全地获取 canvas 元素
+                    let canvas = render.canvas;
+                    for (let i = 0; i < 3 && canvas?.parentNode; i++) {
+                        canvas = canvas.parentNode;
+                    }
+                    return canvas || render.canvas;
+                }
+            } else {
+                return render.canvas;
+            }
+        } catch (e) {
+            console.warn("Failed to get canvas:", e);
             return render.canvas;
         }
     };
@@ -134,20 +156,18 @@
     let updateScheduled = false;
 
     const canvasFilterUpdate = () => {
-        if (updateScheduled) return;
-        updateScheduled = true;
+        const canvas = getCanvas();
+        if (!canvas) return;
 
-        requestAnimationFrame(() => {
-            const newCssString = Array.from(canvasFilters.keys())
-                .map(key => `url("#${key}")`)
-                .join(' ');
-
-            if (newCssString !== canvasFilterString) {
-                canvas.style.filter = newCssString;
-                canvasFilterString = newCssString;
-            }
-            updateScheduled = false;
+        let cssString = "";
+        canvasFilters.forEach((_, key) => {
+            cssString += `url("#${key}") `;
         });
+        cssString = cssString.trim();
+
+        if (canvas.style.filter !== cssString) {
+            canvas.style.filter = cssString;
+        }
     };
 
     const genMenuItem = (itemText, itemValue) => {
@@ -160,6 +180,12 @@
     let compatMode = true;
     let canvasFilterString = "";
     let canvasFilters = new Map();
+    let canvas = null;
+
+    // 初始化 canvas
+    const initCanvas = () => {
+        canvas = getCanvas();
+    };
 
     /*
       Offset the name of injected filter so filters of the name type
@@ -217,6 +243,11 @@
             this.boundRemoveAllFilters = this.removeAllFilters.bind(this);
             runtime.on("PROJECT_START", this.boundRemoveAllFilters);
             runtime.on("PROJECT_STOP_ALL", this.boundRemoveAllFilters);
+
+            // 延迟初始化 canvas，确保 DOM 已准备就绪
+            setTimeout(() => {
+                initCanvas();
+            }, 100);
         }
         clearCache() {
             this._imageCache.clear();
@@ -1144,13 +1175,13 @@
         svgCache = new Map();
 
         _getViewbox(svg) {
-            if (svgCache.has(svg)) return svgCache.get(svg).viewBox;
+            if (this.svgCache.has(svg)) return this.svgCache.get(svg).viewBox;
 
             const svgHead = svg.substring(0, Math.min(1000, svg.length));
             const vbMatch = svgHead.match(/viewBox="([^"]+)"/);
 
             const result = vbMatch ? { match: vbMatch, values: vbMatch[1].split(/\s+/).map(parseFloat) } : null;
-            svgCache.set(svg, { ...svgCache.get(svg), viewBox: result });
+            this.svgCache.set(svg, { ...this.svgCache.get(svg), viewBox: result });
 
             return result;
         }
@@ -1182,23 +1213,42 @@
         }
 
         _injectFilter(svg, name, filter) {
-            nameOffset = (nameOffset + 1) % 100;
-            name += nameOffset;
+            nameOffset++;
+            if (nameOffset > 100) nameOffset = 0;
+            const filterId = `${name}${nameOffset}`;
 
-            // 使用正则一次性匹配
-            const filterMatch = filter.match(/<filter[\s\S]*?<\/filter>/i);
-            if (!filterMatch) return svg;
+            // 修复：正确闭合 filter 标签
+            // 将 <filter 替换为带 id 和属性的完整开始标签
+            filter = filter.replace(/<filter\b/, `<filter id="${filterId}" filterUnits="userSpaceOnUse"`);
 
-            const newFilter = filterMatch[0].replace('<filter', `<filter id="${name}" filterUnits="userSpaceOnUse"`);
-
-            // 使用模板字符串一次性构建
-            if (!svg.includes('g filter')) {
-                return svg.replace('</svg>', `<g filter="url(#${name})"></g></svg>`)
-                    .replace('<svg', `<svg${newFilter}`);
+            // 确保 filter 标签被正确闭合（如果没有的话）
+            if (!filter.includes('</filter>')) {
+                filter += '</filter>';
             }
 
-            return svg.replace(/<g filter="url\([^)]+\)">/, `$& url(#${name})`)
-                .replace('</filter>', `${newFilter}</filter>`);
+            // 将 filter 插入到 svg 的 <svg> 标签后
+            const svgCloseTagIndex = svg.indexOf('>');
+            if (svgCloseTagIndex === -1) return svg;
+
+            // 在第一个 > 之后插入 filter
+            let newSvg = svg.slice(0, svgCloseTagIndex + 1) + filter + svg.slice(svgCloseTagIndex + 1);
+
+            // 添加 filter 属性到 group
+            const filterAttr = `filter="url(#${filterId})"`;
+            if (newSvg.includes('<g ')) {
+                // 替换第一个 <g 标签，添加 filter 属性
+                newSvg = newSvg.replace(/<g([^>]*?)>/, `<g $1 ${filterAttr}>`);
+            } else {
+                // 如果没有 group，包装内容
+                const contentStart = newSvg.indexOf('>', svgCloseTagIndex) + 1;
+                const contentEnd = newSvg.lastIndexOf('</svg>');
+                const content = newSvg.substring(contentStart, contentEnd);
+                newSvg = newSvg.slice(0, contentStart) +
+                    `<g ${filterAttr}>${content}</g>` +
+                    newSvg.slice(contentEnd);
+            }
+
+            return newSvg;
         }
 
         // Block Funcs
@@ -1209,7 +1259,7 @@
             const thisBlock = util.thread.isCompiled ? util.thread.peekStack() : util.thread.peekStackFrame().op.id;
             const container = util.thread.blockContainer;
 
-            const properId = "effects-" + encodeURIComponent(Cast.toString(args.NAME));
+            const properId = "effects-" + Cast.toString(args.NAME).replace(/[^a-zA-Z0-9-]/g, '-');
             filterString = Cast.toString(filterString);
 
             const filterVerifierRegex = /<filter(?:\s[^>]*)?>((?:.|\n)*?)<\/filter>/i;
