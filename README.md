@@ -1,4 +1,4 @@
-# ABW Extensions
+<img width="1040" height="481" alt="image" src="https://github.com/user-attachments/assets/20e9224e-b6ee-4564-bab6-91c0ecf5dd38" /># ABW Extensions
 
 TurboWarp 扩展集合，包含原创扩展及二次修改优化版本。
 
@@ -40,6 +40,14 @@ TurboWarp 扩展集合，包含原创扩展及二次修改优化版本。
 本项目基于 MIT 许可证开源。
 
 各扩展的原始版权归原作者所有，修改部分遵循相同许可证。
+
+---
+
+## 支持者
+
+感谢以下用户对本项目的支持：
+
+- [wasd2802](https://github.com/wasd2802) - 2026年3月
 
 ---
 
