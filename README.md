@@ -49,6 +49,10 @@ TurboWarp 扩展集合，包含原创扩展及二次修改优化版本。
 
 ---
 
+## 支持我！
+QQ：3070922171
+Bilibili: [Gossamer-丝](https://space.bilibili.com/2067930750)
+
 ## 致谢
 
 - [SharkPool](https://sharkpool-sp.github.io/SharkPools-Extensions/)  
